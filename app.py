@@ -2,11 +2,11 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 import fitz
 import spacy
+import traceback
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-import re
 
-print("🚀 ADVANCED RESUME ANALYZER LOADED")
+print("FINAL STABLE RESUME ANALYZER LOADED")
 
 # ---------------- APP INIT ----------------
 app = FastAPI(title="Advanced AI Resume Analyzer")
@@ -28,176 +28,112 @@ JOB_ROLE_SKILLS = {
     "python developer": ["python", "sql", "flask", "fastapi"],
     "data scientist": ["python", "machine learning", "data analysis", "pandas"],
     "frontend developer": ["react", "javascript", "html", "css"],
-    "backend developer": ["python", "node", "sql", "docker"],
-}
-
-# ---------------- DOMAIN SKILLS ----------------
-DOMAIN_SKILLS = {
-    "data science": ["machine learning", "deep learning", "tensorflow", "pytorch"],
-    "web development": ["react", "node", "javascript", "html", "css"],
-    "cloud devops": ["aws", "docker", "kubernetes", "azure"],
+    "backend developer": ["python", "node", "sql", "docker"]
 }
 
 # ---------------- PDF TEXT EXTRACT ----------------
+# Note: many resumes are scanned as images, in which case fitz (PyMuPDF)
+# cannot pull out any "text" and we need OCR.  We try normal extraction
+# first and then fall back to pytesseract if the result seems empty.
+
+import pytesseract
+from PIL import Image
+
+
 def extract_text_from_pdf(file_bytes):
-    text = ""
-    pdf = fitz.open(stream=file_bytes, filetype="pdf")
-    for page in pdf:
-        text += page.get_text()
-    return text.lower()
+    try:
+        text = ""
+
+        with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+            for page in doc:
+                page_text = page.get_text()
+                if page_text:
+                    text += page_text + "\n"
+
+        if len(text.strip()) == 0:
+            raise ValueError("No text found in PDF")
+
+        return text
+
+    except Exception as e:
+        print("PDF READ ERROR:", str(e))
+        raise Exception(f"PDF extraction failed: {str(e)}")
 
 # ---------------- SKILL EXTRACT ----------------
-def extract_skills(text):
-    found = set()
-    all_skills = set()
+def extract_resume_skills(text):
+    skills = set()
+    for role_skills in JOB_ROLE_SKILLS.values():
+        for skill in role_skills:
+            if skill in text:
+                skills.add(skill)
+    return list(skills)
 
-    for role in JOB_ROLE_SKILLS.values():
-        all_skills.update(role)
+# ---------------- JOB SIMILARITY ----------------
+def job_similarity(resume_text, job_skills):
+    job_text = " ".join(job_skills)
 
-    for domain in DOMAIN_SKILLS.values():
-        all_skills.update(domain)
+    emb1 = model.encode([resume_text])
+    emb2 = model.encode([job_text])
 
-    for skill in all_skills:
-        if skill in text:
-            found.add(skill)
+    score = cosine_similarity(emb1, emb2)[0][0]
+    return float(score * 100)
 
-    return list(found)
+# ---------------- EXPERIENCE SCORE ----------------
+def experience_score(text):
+    numbers = sum(c.isdigit() for c in text)
+    return min(numbers * 2, 100)
 
-# ---------------- DOMAIN DETECTION ----------------
-def detect_domain(skills):
-    best_domain = "general"
-    best_score = 0
-
-    for domain, domain_skills in DOMAIN_SKILLS.items():
-        match = len(set(skills) & set(domain_skills))
-        if match > best_score:
-            best_score = match
-            best_domain = domain
-
-    return best_domain
-
-# ---------------- EXPERIENCE DETECTION ----------------
-def detect_experience(text):
-    years = re.findall(r"\d+\s+years", text)
-    if len(years) >= 2:
-        return "experienced"
-    elif len(years) == 1:
-        return "intermediate"
-    return "fresher"
-
-# ---------------- SECTION SCORE ----------------
-def resume_section_score(text):
-    score = 0
-
-    if "objective" in text or "summary" in text:
-        score += 10
-    if "education" in text:
-        score += 15
-    if "experience" in text:
-        score += 20
-    if "project" in text:
-        score += 20
-    if "skills" in text:
-        score += 15
-    if "certification" in text:
-        score += 10
-    if "achievement" in text:
-        score += 10
-
-    return min(score, 100)
-
-# ---------------- SEMANTIC MATCH ----------------
-def semantic_similarity(text1, text2):
-    emb1 = model.encode([text1])
-    emb2 = model.encode([text2])
-    return float(cosine_similarity(emb1, emb2)[0][0] * 100)
+# ---------------- FINAL SCORE ----------------
+def final_score(skill_score, job_score, exp_score):
+    return skill_score*0.4 + job_score*0.4 + exp_score*0.2
 
 # ---------------- SUGGESTIONS ----------------
-def generate_suggestions(missing_skills, section_score):
+def generate_suggestions(missing, exp_score):
     suggestions = []
-
-    if missing_skills:
-        suggestions.append("Add skills: " + ", ".join(missing_skills))
-
-    if section_score < 60:
-        suggestions.append("Improve resume sections like projects and achievements")
-
+    if missing:
+        suggestions.append("Add skills like: " + ", ".join(missing))
+    if exp_score < 40:
+        suggestions.append("Add measurable achievements with numbers")
     return suggestions
 
-# =====================================================
-# 🚀 ENDPOINT 1 → RESUME + JOB ROLE
-# =====================================================
-
+# ---------------- MAIN API ----------------
 @app.post("/analyze-resume-role")
 async def analyze_resume_role(
     job_role: str = Form(...),
     file: UploadFile = File(...)
 ):
+    try:
+        file_bytes = await file.read()
+        resume_text = extract_text_from_pdf(file_bytes)
 
-    file_bytes = await file.read()
-    text = extract_text_from_pdf(file_bytes)
+        job_role = job_role.lower().strip()
 
-    job_role = job_role.lower().strip()
-    if job_role not in JOB_ROLE_SKILLS:
-        return {"error": "Invalid job role"}
+        if job_role not in JOB_ROLE_SKILLS:
+            return {"error": "Invalid job role"}
 
-    resume_skills = extract_skills(text)
-    job_skills = JOB_ROLE_SKILLS[job_role]
+        resume_skills = extract_resume_skills(resume_text)
+        job_skills = JOB_ROLE_SKILLS[job_role]
 
-    missing = list(set(job_skills) - set(resume_skills))
+        missing = list(set(job_skills) - set(resume_skills))
 
-    skill_score = (len(resume_skills) / len(job_skills)) * 100 if job_skills else 0
-    semantic_score = semantic_similarity(text, " ".join(job_skills))
-    section_score = resume_section_score(text)
+        skill_score = (len(resume_skills) / len(job_skills)) * 100 if job_skills else 0
+        job_score = job_similarity(resume_text, job_skills)
+        exp_score = experience_score(resume_text)
 
-    final_score = skill_score * 0.3 + semantic_score * 0.4 + section_score * 0.3
+        final = final_score(skill_score, job_score, exp_score)
+        suggestions = generate_suggestions(missing, exp_score)
 
-    domain = detect_domain(resume_skills)
-    exp_level = detect_experience(text)
+        return {
+            "status": "success",
+            "job_role": job_role,
+            "final_score": round(final, 2),
+            "skills_found": resume_skills,
+            "skills_missing": missing,
+            "job_match_score": round(job_score, 2),
+            "experience_score": round(exp_score, 2),
+            "suggestions": suggestions
+        }
 
-    return {
-        "job_role": job_role,
-        "final_score": round(final_score, 2),
-        "domain_detected": domain,
-        "experience_level": exp_level,
-        "skills_found": resume_skills,
-        "skills_missing": missing,
-        "suggestions": generate_suggestions(missing, section_score),
-    }
-
-# =====================================================
-# 🚀 ENDPOINT 2 → RESUME + JOB DESCRIPTION
-# =====================================================
-
-@app.post("/analyze-resume-jd")
-async def analyze_resume_jd(
-    file: UploadFile = File(...),
-    job_description: str = Form(...)
-):
-
-    file_bytes = await file.read()
-    resume_text = extract_text_from_pdf(file_bytes)
-    jd_text = job_description.lower()
-
-    resume_skills = extract_skills(resume_text)
-    jd_skills = extract_skills(jd_text)
-
-    missing = list(set(jd_skills) - set(resume_skills))
-
-    skill_score = (len(set(resume_skills) & set(jd_skills)) / len(jd_skills)) * 100 if jd_skills else 0
-    semantic_score = semantic_similarity(resume_text, jd_text)
-    section_score = resume_section_score(resume_text)
-
-    final_score = skill_score * 0.3 + semantic_score * 0.4 + section_score * 0.3
-
-    domain = detect_domain(resume_skills)
-    exp_level = detect_experience(resume_text)
-
-    return {
-        "final_score": round(final_score, 2),
-        "domain_detected": domain,
-        "experience_level": exp_level,
-        "skills_found": list(set(resume_skills) & set(jd_skills)),
-        "skills_missing": missing,
-        "suggestions": generate_suggestions(missing, section_score),
-    }
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
