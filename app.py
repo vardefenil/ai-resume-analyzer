@@ -1,16 +1,16 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-import fitz
-import spacy
-import traceback
+import pdfplumber
 import re
-from sentence_transformers import SentenceTransformer
+import io
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-print("FINAL STABLE RESUME ANALYZER LOADED")
+app = FastAPI()
 
-# ---------------- APP INIT ----------------
-app = FastAPI(title="Advanced AI Resume Analyzer")
+# -------------------------
+# CORS
+# -------------------------
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,102 +20,243 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------- LOAD MODELS ----------------
-nlp = spacy.load("en_core_web_sm")
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# -------------------------
+# SKILL DATABASE
+# -------------------------
 
-# ---------------- JOB ROLE SKILLS ----------------
+ALL_SKILLS = [
+"python","java","c++","sql","mysql","mongodb",
+"pandas","numpy","matplotlib","seaborn",
+"machine learning","deep learning","tensorflow","keras","pytorch",
+"data analysis","data visualization",
+"react","javascript","html","css","node","express",
+"flask","fastapi",
+"docker","kubernetes","aws","git","linux"
+]
+
+# -------------------------
+# JOB ROLE SKILLS
+# -------------------------
+
 JOB_ROLE_SKILLS = {
-    "python developer": ["python", "sql", "flask", "fastapi"],
-    "data scientist": ["python", "machine learning", "data analysis", "pandas"],
-    "frontend developer": ["react", "javascript", "html", "css"],
-    "backend developer": ["python", "node", "sql", "docker"]
+
+"data scientist":[
+"python","pandas","numpy","machine learning",
+"data analysis","tensorflow","deep learning","sql"
+],
+
+"python developer":[
+"python","flask","fastapi","sql","git","docker"
+],
+
+"frontend developer":[
+"react","javascript","html","css","node"
+],
+
+"machine learning engineer":[
+"python","machine learning","tensorflow","pytorch","deep learning"
+]
+
 }
 
-# ---------------- PDF TEXT EXTRACT ----------------
+# -------------------------
+# PDF TEXT EXTRACTION
+# -------------------------
+
 def extract_text_from_pdf(file_bytes):
+
+    text = ""
+
     try:
-        text = ""
 
-        with fitz.open(stream=file_bytes, filetype="pdf") as doc:
-            for page in doc:
-                page_text = page.get_text()
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+
+            for page in pdf.pages:
+
+                page_text = page.extract_text()
+
                 if page_text:
-                    text += page_text + "\n"
-
-        if len(text.strip()) == 0:
-            raise ValueError("No text found in PDF")
-
-        return text.lower()
+                    text += page_text
 
     except Exception as e:
-        print("PDF READ ERROR:", str(e))
-        raise Exception(f"PDF extraction failed: {str(e)}")
+        print("PDF extraction error:", e)
 
+    return text.lower()
 
-# ---------------- SKILL EXTRACT ----------------
-def extract_resume_skills(text, job_skills):
+# -------------------------
+# SKILL EXTRACTION
+# -------------------------
 
-    found_skills = []
+def extract_resume_skills(text):
 
-    for skill in job_skills:
+    found = []
+
+    for skill in ALL_SKILLS:
+
         pattern = r"\b" + re.escape(skill) + r"\b"
 
         if re.search(pattern, text):
-            found_skills.append(skill)
 
-    return found_skills
+            found.append(skill)
 
+    return found
 
-# ---------------- JOB SIMILARITY ----------------
-def job_similarity(resume_text, job_skills):
+# -------------------------
+# SKILL SCORE
+# -------------------------
 
-    job_text = " ".join(job_skills)
+def calculate_skill_score(resume_skills, job_skills):
 
-    emb1 = model.encode([resume_text])
-    emb2 = model.encode([job_text])
+    matched = []
 
-    score = cosine_similarity(emb1, emb2)[0][0]
+    for skill in job_skills:
 
-    return float(score * 100)
+        if skill in resume_skills:
 
+            matched.append(skill)
 
-# ---------------- EXPERIENCE SCORE ----------------
-def experience_score(text):
+    if len(job_skills) == 0:
 
-    years = re.findall(r"\b\d+\s*(year|yr)", text)
+        return 0, []
+
+    score = (len(matched) / len(job_skills)) * 100
+
+    return score, matched
+
+# -------------------------
+# EXPERIENCE DETECTION
+# -------------------------
+
+def calculate_experience_score(text):
+
+    years = re.findall(r'(\d+)\+?\s*(year|years|yr|yrs)', text)
 
     if years:
-        return min(len(years) * 20, 100)
+
+        nums = [int(y[0]) for y in years]
+
+        exp = max(nums)
+
+        if exp >= 5:
+            return 90
+        elif exp >= 3:
+            return 70
+        elif exp >= 1:
+            return 50
 
     return 30
+# -------------------------
+# EDUCATION EXTRACTION
+# -------------------------
 
+def extract_education(text):
 
-# ---------------- FINAL SCORE ----------------
-def final_score(skill_score, job_score, exp_score):
+    education_list = []
 
-    return (skill_score * 0.4) + (job_score * 0.4) + (exp_score * 0.2)
+    degree_patterns = [
+        r"(bachelor.*?engineering)",
+        r"(bachelor.*?technology)",
+        r"(bachelor.*?science)",
+        r"(b\.tech)",
+        r"(b\.e)",
+        r"(bsc)",
+        r"(master.*?science)",
+        r"(master.*?technology)",
+        r"(m\.tech)",
+        r"(msc)",
+        r"(phd)",
+        r"(mba)"
+    ]
 
+    university_pattern = r"(university|college|institute|school)"
 
-# ---------------- SUGGESTIONS ----------------
-def generate_suggestions(missing, exp_score):
+    year_pattern = r"(19|20)\d{2}"
+
+    lines = text.split("\n")
+
+    for i, line in enumerate(lines):
+
+        line_lower = line.lower()
+
+        for pattern in degree_patterns:
+
+            if re.search(pattern, line_lower):
+
+                degree = line.strip()
+
+                institution = ""
+                year = ""
+
+                if i + 1 < len(lines):
+                    next_line = lines[i + 1].strip()
+
+                    if re.search(university_pattern, next_line.lower()):
+                        institution = next_line
+
+                year_match = re.search(year_pattern, line)
+
+                if year_match:
+                    year = year_match.group()
+
+                education_list.append({
+                    "degree": degree,
+                    "institution": institution if institution else "Detected",
+                    "year": year
+                })
+
+    return education_list
+
+# -------------------------
+# JOB SIMILARITY
+# -------------------------
+
+def job_similarity_score(resume_text, job_role, job_skills):
+
+    job_text = job_role + " " + " ".join(job_skills)
+
+    vectorizer = TfidfVectorizer()
+
+    vectors = vectorizer.fit_transform([resume_text, job_text])
+
+    similarity = cosine_similarity(vectors[0], vectors[1])[0][0]
+
+    return similarity * 100
+
+# -------------------------
+# FINAL SCORE
+# -------------------------
+
+def calculate_final_score(skill_score, job_score, exp_score):
+
+    return (skill_score * 0.5) + (job_score * 0.3) + (exp_score * 0.2)
+
+# -------------------------
+# SUGGESTIONS
+# -------------------------
+
+def generate_suggestions(missing_skills, exp_score):
 
     suggestions = []
 
-    if missing:
-        suggestions.append("Add skills like: " + ", ".join(missing))
+    for skill in missing_skills:
+
+        suggestions.append(f"Add skill: {skill}")
 
     if exp_score < 40:
+
         suggestions.append("Add measurable achievements with numbers")
 
     return suggestions
 
+# -------------------------
+# MAIN API
+# -------------------------
 
-# ---------------- MAIN API ----------------
 @app.post("/analyze-resume-role")
+
 async def analyze_resume_role(
-    job_role: str = Form(...),
-    file: UploadFile = File(...)
+job_role: str = Form(...),
+file: UploadFile = File(...)
 ):
 
     try:
@@ -127,35 +268,68 @@ async def analyze_resume_role(
         job_role = job_role.lower().strip()
 
         if job_role not in JOB_ROLE_SKILLS:
+
             return {"error": "Invalid job role"}
 
         job_skills = JOB_ROLE_SKILLS[job_role]
 
-        resume_skills = extract_resume_skills(resume_text, job_skills)
+        resume_skills = extract_resume_skills(resume_text)
 
-        missing = list(set(job_skills) - set(resume_skills))
+        skill_score, matched_skills = calculate_skill_score(
+            resume_skills,
+            job_skills
+        )
 
-        skill_score = (len(resume_skills) / len(job_skills)) * 100
+        missing_skills = [s for s in job_skills if s not in matched_skills]
 
-        job_score = job_similarity(resume_text, job_skills)
+        exp_score = calculate_experience_score(resume_text)
 
-        exp_score = experience_score(resume_text)
+        job_score = job_similarity_score(
+            resume_text,
+            job_role,
+            job_skills
+        )
 
-        final = final_score(skill_score, job_score, exp_score)
+        final_score = calculate_final_score(
+            skill_score,
+            job_score,
+            exp_score
+        )
 
-        suggestions = generate_suggestions(missing, exp_score)
+        education = extract_education(resume_text)
+
+        suggestions = generate_suggestions(
+            missing_skills,
+            exp_score
+        )
 
         return {
+
             "status": "success",
+
             "job_role": job_role,
-            "final_score": round(final, 2),
-            "skills_found": resume_skills,
-            "skills_missing": missing,
-            "job_match_score": round(job_score, 2),
-            "experience_score": round(exp_score, 2),
+
+            "final_score": round(final_score,2),
+
+            "skills_found": matched_skills,
+
+            "skills_missing": missing_skills,
+
+            "job_match_score": round(job_score,2),
+
+            "experience_score": exp_score,
+
+            "education": education,
+
             "suggestions": suggestions
+
         }
 
     except Exception as e:
-        traceback.print_exc()
-        return {"error": str(e)}
+
+        return {
+
+            "status":"error",
+            "message":str(e)
+
+        }
