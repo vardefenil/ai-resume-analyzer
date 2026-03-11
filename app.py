@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import fitz
 import spacy
 import traceback
+import re
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -32,14 +33,6 @@ JOB_ROLE_SKILLS = {
 }
 
 # ---------------- PDF TEXT EXTRACT ----------------
-# Note: many resumes are scanned as images, in which case fitz (PyMuPDF)
-# cannot pull out any "text" and we need OCR.  We try normal extraction
-# first and then fall back to pytesseract if the result seems empty.
-
-import pytesseract
-from PIL import Image
-
-
 def extract_text_from_pdf(file_bytes):
     try:
         text = ""
@@ -53,48 +46,70 @@ def extract_text_from_pdf(file_bytes):
         if len(text.strip()) == 0:
             raise ValueError("No text found in PDF")
 
-        return text
+        return text.lower()
 
     except Exception as e:
         print("PDF READ ERROR:", str(e))
         raise Exception(f"PDF extraction failed: {str(e)}")
 
+
 # ---------------- SKILL EXTRACT ----------------
-def extract_resume_skills(text):
-    skills = set()
-    for role_skills in JOB_ROLE_SKILLS.values():
-        for skill in role_skills:
-            if skill in text:
-                skills.add(skill)
-    return list(skills)
+def extract_resume_skills(text, job_skills):
+
+    found_skills = []
+
+    for skill in job_skills:
+        pattern = r"\b" + re.escape(skill) + r"\b"
+
+        if re.search(pattern, text):
+            found_skills.append(skill)
+
+    return found_skills
+
 
 # ---------------- JOB SIMILARITY ----------------
 def job_similarity(resume_text, job_skills):
+
     job_text = " ".join(job_skills)
 
     emb1 = model.encode([resume_text])
     emb2 = model.encode([job_text])
 
     score = cosine_similarity(emb1, emb2)[0][0]
+
     return float(score * 100)
+
 
 # ---------------- EXPERIENCE SCORE ----------------
 def experience_score(text):
-    numbers = sum(c.isdigit() for c in text)
-    return min(numbers * 2, 100)
+
+    years = re.findall(r"\b\d+\s*(year|yr)", text)
+
+    if years:
+        return min(len(years) * 20, 100)
+
+    return 30
+
 
 # ---------------- FINAL SCORE ----------------
 def final_score(skill_score, job_score, exp_score):
-    return skill_score*0.4 + job_score*0.4 + exp_score*0.2
+
+    return (skill_score * 0.4) + (job_score * 0.4) + (exp_score * 0.2)
+
 
 # ---------------- SUGGESTIONS ----------------
 def generate_suggestions(missing, exp_score):
+
     suggestions = []
+
     if missing:
         suggestions.append("Add skills like: " + ", ".join(missing))
+
     if exp_score < 40:
         suggestions.append("Add measurable achievements with numbers")
+
     return suggestions
+
 
 # ---------------- MAIN API ----------------
 @app.post("/analyze-resume-role")
@@ -102,8 +117,11 @@ async def analyze_resume_role(
     job_role: str = Form(...),
     file: UploadFile = File(...)
 ):
+
     try:
+
         file_bytes = await file.read()
+
         resume_text = extract_text_from_pdf(file_bytes)
 
         job_role = job_role.lower().strip()
@@ -111,16 +129,20 @@ async def analyze_resume_role(
         if job_role not in JOB_ROLE_SKILLS:
             return {"error": "Invalid job role"}
 
-        resume_skills = extract_resume_skills(resume_text)
         job_skills = JOB_ROLE_SKILLS[job_role]
+
+        resume_skills = extract_resume_skills(resume_text, job_skills)
 
         missing = list(set(job_skills) - set(resume_skills))
 
-        skill_score = (len(resume_skills) / len(job_skills)) * 100 if job_skills else 0
+        skill_score = (len(resume_skills) / len(job_skills)) * 100
+
         job_score = job_similarity(resume_text, job_skills)
+
         exp_score = experience_score(resume_text)
 
         final = final_score(skill_score, job_score, exp_score)
+
         suggestions = generate_suggestions(missing, exp_score)
 
         return {
