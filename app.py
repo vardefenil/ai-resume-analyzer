@@ -62,27 +62,28 @@ JOB_ROLE_SKILLS = {
 # -------------------------
 # PDF TEXT EXTRACTION
 # -------------------------
-
 def extract_text_from_pdf(file_bytes):
 
     text = ""
 
     try:
-
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
 
             for page in pdf.pages:
 
-                page_text = page.extract_text()
+                # preserve layout
+                page_text = page.extract_text(x_tolerance=1, y_tolerance=3)
 
                 if page_text:
-                    text += page_text
+                    text += "\n" + page_text
 
     except Exception as e:
         print("PDF extraction error:", e)
 
-    return text.lower()
+    # IMPORTANT: normalize newlines
+    text = re.sub(r'\r', '\n', text)
 
+    return text.lower()
 # -------------------------
 # SKILL EXTRACTION
 # -------------------------
@@ -96,7 +97,6 @@ def extract_resume_skills(text):
         pattern = r"\b" + re.escape(skill) + r"\b"
 
         if re.search(pattern, text):
-
             found.append(skill)
 
     return found
@@ -110,13 +110,10 @@ def calculate_skill_score(resume_skills, job_skills):
     matched = []
 
     for skill in job_skills:
-
         if skill in resume_skills:
-
             matched.append(skill)
 
     if len(job_skills) == 0:
-
         return 0, []
 
     score = (len(matched) / len(job_skills)) * 100
@@ -145,75 +142,114 @@ def calculate_experience_score(text):
             return 50
 
     return 30
+
+
 # -------------------------
 # EDUCATION EXTRACTION
 # -------------------------
-import re
-
 def extract_education(text):
 
+<<<<<<< HEAD
    
     education_list = []
+=======
+    education = []
+>>>>>>> 97fc278 (your update message)
 
-    lines = text.split("\n")
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
 
-    degree_patterns = [
-        r"bachelor.*engineering",
-        r"b\.?e\.?",
-        r"b\.?tech",
-        r"master",
-        r"m\.?tech"
-    ]
+    i = 0
 
-    year_pattern = r"(20\d{2})\s*[–-]\s*(20\d{2})"
-    spi_pattern = r"(spi|cgpa|gpa).*?(\d+\.\d+)"
-
-    for i in range(len(lines)):
+    while i < len(lines):
 
         line = lines[i].lower()
 
-        for pattern in degree_patterns:
+        # BE / BTECH
+        if "b.e" in line or "b.tech" in line or "bachelor" in line:
 
-            if re.search(pattern, line):
+            degree = lines[i]
 
-                degree = lines[i].strip()
+            institution = ""
+            gpa = ""
+            year = ""
 
-                institution = ""
-                year = "N/A"
-                gpa = ""
+            if i+1 < len(lines):
+                institution = lines[i+1]
 
-                # Look above for institution
-                if i > 0:
-                    institution_line = lines[i-1]
+            if i+2 < len(lines):
+                g = re.search(r"\d\.\d+", lines[i+2])
+                if g:
+                    gpa = g.group()
 
-                    year_match = re.search(year_pattern, institution_line)
+            y = re.search(r"20\d{2}\s*[-–]\s*20\d{2}", degree)
+            if y:
+                year = y.group()
 
-                    if year_match:
-                        year = f"{year_match.group(1)} - {year_match.group(2)}"
-                        institution = institution_line.replace(year_match.group(0), "").strip()
-                    else:
-                        institution = institution_line.strip()
+            education.append({
+                "degree": degree,
+                "institution": institution,
+                "year": year if year else "N/A",
+                "gpa": gpa
+            })
 
-                # Look below for SPI/GPA
-                if i+1 < len(lines):
-                    spi_match = re.search(spi_pattern, lines[i+1].lower())
-                    if spi_match:
-                        gpa = spi_match.group(2)
+            i += 3
+            continue
 
-                education_list.append({
-                    "degree": degree,
-                    "institution": institution,
-                    "year": year,
-                    "gpa": gpa
-                })
 
-    # Remove duplicates
-    unique = []
-    for edu in education_list:
-        if edu not in unique:
-            unique.append(edu)
+        # 12th
+        if "12th" in line:
 
-    return unique
+            degree = lines[i]
+            institution = ""
+            gpa = ""
+
+            if i+1 < len(lines):
+                institution = lines[i+1]
+
+                g = re.search(r"\d{2}%", lines[i+1])
+                if g:
+                    gpa = g.group()
+
+            education.append({
+                "degree": degree,
+                "institution": institution,
+                "year": "",
+                "gpa": gpa
+            })
+
+            i += 2
+            continue
+
+
+        # 10th
+        if "10th" in line:
+
+            degree = lines[i]
+            institution = ""
+            gpa = ""
+
+            if i+1 < len(lines):
+                institution = lines[i+1]
+
+                g = re.search(r"\d{2}%", lines[i+1])
+                if g:
+                    gpa = g.group()
+
+            education.append({
+                "degree": degree,
+                "institution": institution,
+                "year": "",
+                "gpa": gpa
+            })
+
+            i += 2
+            continue
+
+
+        i += 1
+
+    return education
+
 
 # -------------------------
 # JOB SIMILARITY
@@ -231,6 +267,7 @@ def job_similarity_score(resume_text, job_role, job_skills):
 
     return similarity * 100
 
+
 # -------------------------
 # FINAL SCORE
 # -------------------------
@@ -238,6 +275,7 @@ def job_similarity_score(resume_text, job_role, job_skills):
 def calculate_final_score(skill_score, job_score, exp_score):
 
     return (skill_score * 0.5) + (job_score * 0.3) + (exp_score * 0.2)
+
 
 # -------------------------
 # SUGGESTIONS
@@ -248,14 +286,13 @@ def generate_suggestions(missing_skills, exp_score):
     suggestions = []
 
     for skill in missing_skills:
-
         suggestions.append(f"Add skill: {skill}")
 
     if exp_score < 40:
-
         suggestions.append("Add measurable achievements with numbers")
 
     return suggestions
+
 
 # -------------------------
 # MAIN API
@@ -264,8 +301,8 @@ def generate_suggestions(missing_skills, exp_score):
 @app.post("/analyze-resume-role")
 
 async def analyze_resume_role(
-job_role: str = Form(...),
-file: UploadFile = File(...)
+    job_role: str = Form(...),
+    file: UploadFile = File(...)
 ):
 
     try:
@@ -277,7 +314,6 @@ file: UploadFile = File(...)
         job_role = job_role.lower().strip()
 
         if job_role not in JOB_ROLE_SKILLS:
-
             return {"error": "Invalid job role"}
 
         job_skills = JOB_ROLE_SKILLS[job_role]
@@ -337,8 +373,6 @@ file: UploadFile = File(...)
     except Exception as e:
 
         return {
-
             "status":"error",
             "message":str(e)
-
         }

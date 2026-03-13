@@ -20,13 +20,18 @@ const Dashboard = () => {
     };
 
     // ✅ Safely extract education from backend
-    let educationData: any[] = [];
+    // Safely extract education from backend
+let educationData: any[] = [];
 
-    if (Array.isArray(backendData?.education)) {
-      educationData = backendData.education;
-    } else if (Array.isArray(backendData?.data?.education)) {
-      educationData = backendData.data.education;
-    }
+if (Array.isArray(backendData?.education)) {
+  educationData = backendData.education;
+} else if (Array.isArray(backendData?.data?.education)) {
+  educationData = backendData.data.education;
+} else {
+  educationData = [];
+}
+
+console.log("Education extracted:", educationData);
 
     // ✅ Remove duplicate education entries
     educationData = educationData.filter(
@@ -70,12 +75,12 @@ const Dashboard = () => {
       ],
 
       // ✅ Education mapping
-      education: educationData.map((edu: any) => ({
-        degree: edu?.degree || "Degree Detected",
-        institution: edu?.institution || "Institution Detected",
-        year: edu?.year || "N/A",
-        gpa: ""
-      })),
+   education: educationData.map((edu: any) => ({
+  degree: edu?.degree || "Unknown Degree",
+  institution: edu?.institution || "Unknown Institution",
+  year: edu?.year || "N/A",
+  gpa: edu?.gpa || ""
+})),
 
       keywords: {
         matched: backendData.skills_found || [],

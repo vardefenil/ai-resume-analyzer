@@ -60,7 +60,12 @@ function App() {
         }
       ],
 
-      education: [],
+      education: backendData.education?.map((edu: any) => ({
+  degree: edu.degree || "Not specified",
+  institution: edu.institution || "Not specified",
+  year: edu.year || "N/A",
+  gpa: edu.gpa || "N/A"
+})) || [],
 
       keywords: {
         matched: backendData.skills_found || [],
