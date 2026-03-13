@@ -148,63 +148,71 @@ def calculate_experience_score(text):
 # -------------------------
 # EDUCATION EXTRACTION
 # -------------------------
+import re
 
 def extract_education(text):
 
     education_list = []
 
-    degree_patterns = [
-        r"(bachelor.*?engineering)",
-        r"(bachelor.*?technology)",
-        r"(bachelor.*?science)",
-        r"(b\.tech)",
-        r"(b\.e)",
-        r"(bsc)",
-        r"(master.*?science)",
-        r"(master.*?technology)",
-        r"(m\.tech)",
-        r"(msc)",
-        r"(phd)",
-        r"(mba)"
-    ]
-
-    university_pattern = r"(university|college|institute|school)"
-
-    year_pattern = r"(19|20)\d{2}"
-
     lines = text.split("\n")
 
-    for i, line in enumerate(lines):
+    degree_patterns = [
+        r"bachelor.*engineering",
+        r"b\.?e\.?",
+        r"b\.?tech",
+        r"master",
+        r"m\.?tech"
+    ]
 
-        line_lower = line.lower()
+    year_pattern = r"(20\d{2})\s*[–-]\s*(20\d{2})"
+    spi_pattern = r"(spi|cgpa|gpa).*?(\d+\.\d+)"
+
+    for i in range(len(lines)):
+
+        line = lines[i].lower()
 
         for pattern in degree_patterns:
 
-            if re.search(pattern, line_lower):
+            if re.search(pattern, line):
 
-                degree = line.strip()
+                degree = lines[i].strip()
 
                 institution = ""
-                year = ""
+                year = "N/A"
+                gpa = ""
 
-                if i + 1 < len(lines):
-                    next_line = lines[i + 1].strip()
+                # Look above for institution
+                if i > 0:
+                    institution_line = lines[i-1]
 
-                    if re.search(university_pattern, next_line.lower()):
-                        institution = next_line
+                    year_match = re.search(year_pattern, institution_line)
 
-                year_match = re.search(year_pattern, line)
+                    if year_match:
+                        year = f"{year_match.group(1)} - {year_match.group(2)}"
+                        institution = institution_line.replace(year_match.group(0), "").strip()
+                    else:
+                        institution = institution_line.strip()
 
-                if year_match:
-                    year = year_match.group()
+                # Look below for SPI/GPA
+                if i+1 < len(lines):
+                    spi_match = re.search(spi_pattern, lines[i+1].lower())
+                    if spi_match:
+                        gpa = spi_match.group(2)
 
                 education_list.append({
                     "degree": degree,
-                    "institution": institution if institution else "Detected",
-                    "year": year
+                    "institution": institution,
+                    "year": year,
+                    "gpa": gpa
                 })
 
-    return education_list
+    # Remove duplicates
+    unique = []
+    for edu in education_list:
+        if edu not in unique:
+            unique.append(edu)
+
+    return unique
 
 # -------------------------
 # JOB SIMILARITY
