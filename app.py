@@ -152,6 +152,7 @@ import re
 
 def extract_education(text):
 
+   
     education_list = []
 
     lines = text.split("\n")
