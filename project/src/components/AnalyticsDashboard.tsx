@@ -140,21 +140,32 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ data }) => {
       </div>
 
       {/* Education Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h3 className="text-xl font-semibold text-slate-900 mb-4">Education</h3>
-        <div className="space-y-4">
-          {data.education.map((edu, index) => (
-            <div key={index} className="border-l-4 border-blue-500 pl-4">
-              <h4 className="font-semibold text-slate-900">{edu.degree}</h4>
-              <p className="text-slate-700">{edu.institution}</p>
-              <div className="flex items-center space-x-4 text-sm text-slate-600 mt-1">
-                <span>{edu.year}</span>
-                {edu.gpa && <span>GPA: {edu.gpa}</span>}
-              </div>
-            </div>
-          ))}
+<div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+  <h3 className="text-xl font-semibold text-slate-900 mb-4">Education</h3>
+
+  {data.education && data.education.length > 0 ? (
+    <div className="space-y-4">
+      {data.education.map((edu, index) => (
+        <div key={index} className="border-l-4 border-blue-500 pl-4">
+          <h4 className="font-semibold text-slate-900">
+            {edu.degree || "Degree Detected"}
+          </h4>
+
+          <p className="text-slate-700">
+            {edu.institution || "Institution Detected"}
+          </p>
+
+          <div className="flex items-center space-x-4 text-sm text-slate-600 mt-1">
+            <span>{edu.year || "Year N/A"}</span>
+            {edu.gpa && <span>GPA: {edu.gpa}</span>}
+          </div>
         </div>
-      </div>
+      ))}
+    </div>
+  ) : (
+    <p className="text-slate-500 italic">No education detected in resume</p>
+  )}
+</div>
 
       {/* Strengths & Recommendations */}
       <div className="grid lg:grid-cols-2 gap-6">
