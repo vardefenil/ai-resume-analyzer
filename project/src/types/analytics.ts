@@ -24,11 +24,29 @@ export interface Keywords {
   score: number
 }
 
+/* Optional future feature */
+export interface Project {
+  title: string
+  description?: string
+  technologies?: string[]
+}
+
+/* Optional future feature */
+export interface Certification {
+  name: string
+  issuer?: string
+  year?: string
+}
+
 export interface AnalyticsData {
   id?: string
+
   fileName: string
+
   overallScore: number
+
   rating: "Excellent" | "Good" | "Average" | "Needs Improvement" | "Poor"
+
   rank?: number
 
   skills: Skill[]
@@ -42,12 +60,22 @@ export interface AnalyticsData {
   strengths: string[]
 
   recommendations: string[]
+
+  /* Optional extensions for future improvements */
+
+  projects?: Project[]
+
+  certifications?: Certification[]
 }
 
 export interface ComparisonResult {
   bestResume: AnalyticsData
+
   worstResume: AnalyticsData
+
   averageScore: number
+
   totalResumes: number
+
   rankings: AnalyticsData[]
 }
