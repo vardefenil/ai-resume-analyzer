@@ -62,7 +62,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onAnalysisComplete }) => {
 
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/analyze-resume-role",
+        "https://ai-resume-analyzer-1-7tca.onrender.com/analyze-resume-role",
         {
           method: "POST",
           body: formData,
