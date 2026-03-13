@@ -1,16 +1,29 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 import pdfplumber
 import re
 import io
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from database import engine
+
+from database import engine, SessionLocal
 import models
 
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+# -------------------------
+# DATABASE SESSION
+# -------------------------
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 # -------------------------
 # CORS
@@ -66,6 +79,7 @@ JOB_ROLE_SKILLS = {
 # -------------------------
 # PDF TEXT EXTRACTION
 # -------------------------
+
 def extract_text_from_pdf(file_bytes):
 
     text = ""
@@ -75,7 +89,6 @@ def extract_text_from_pdf(file_bytes):
 
             for page in pdf.pages:
 
-                # preserve layout
                 page_text = page.extract_text(x_tolerance=1, y_tolerance=3)
 
                 if page_text:
@@ -84,10 +97,10 @@ def extract_text_from_pdf(file_bytes):
     except Exception as e:
         print("PDF extraction error:", e)
 
-    # IMPORTANT: normalize newlines
     text = re.sub(r'\r', '\n', text)
 
     return text.lower()
+
 # -------------------------
 # SKILL EXTRACTION
 # -------------------------
@@ -147,18 +160,13 @@ def calculate_experience_score(text):
 
     return 30
 
-
 # -------------------------
 # EDUCATION EXTRACTION
 # -------------------------
+
 def extract_education(text):
 
-
-   
-    education_list = []
-
     education = []
-
 
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
@@ -168,11 +176,9 @@ def extract_education(text):
 
         line = lines[i].lower()
 
-        # BE / BTECH
         if "b.e" in line or "b.tech" in line or "bachelor" in line:
 
             degree = lines[i]
-
             institution = ""
             gpa = ""
             year = ""
@@ -199,61 +205,9 @@ def extract_education(text):
             i += 3
             continue
 
-
-        # 12th
-        if "12th" in line:
-
-            degree = lines[i]
-            institution = ""
-            gpa = ""
-
-            if i+1 < len(lines):
-                institution = lines[i+1]
-
-                g = re.search(r"\d{2}%", lines[i+1])
-                if g:
-                    gpa = g.group()
-
-            education.append({
-                "degree": degree,
-                "institution": institution,
-                "year": "",
-                "gpa": gpa
-            })
-
-            i += 2
-            continue
-
-
-        # 10th
-        if "10th" in line:
-
-            degree = lines[i]
-            institution = ""
-            gpa = ""
-
-            if i+1 < len(lines):
-                institution = lines[i+1]
-
-                g = re.search(r"\d{2}%", lines[i+1])
-                if g:
-                    gpa = g.group()
-
-            education.append({
-                "degree": degree,
-                "institution": institution,
-                "year": "",
-                "gpa": gpa
-            })
-
-            i += 2
-            continue
-
-
         i += 1
 
     return education
-
 
 # -------------------------
 # JOB SIMILARITY
@@ -271,7 +225,6 @@ def job_similarity_score(resume_text, job_role, job_skills):
 
     return similarity * 100
 
-
 # -------------------------
 # FINAL SCORE
 # -------------------------
@@ -279,7 +232,6 @@ def job_similarity_score(resume_text, job_role, job_skills):
 def calculate_final_score(skill_score, job_score, exp_score):
 
     return (skill_score * 0.5) + (job_score * 0.3) + (exp_score * 0.2)
-
 
 # -------------------------
 # SUGGESTIONS
@@ -297,16 +249,15 @@ def generate_suggestions(missing_skills, exp_score):
 
     return suggestions
 
-
 # -------------------------
 # MAIN API
 # -------------------------
 
 @app.post("/analyze-resume-role")
-
 async def analyze_resume_role(
     job_role: str = Form(...),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
 ):
 
     try:
@@ -352,24 +303,31 @@ async def analyze_resume_role(
             exp_score
         )
 
+        # -------------------------
+        # SAVE TO DATABASE
+        # -------------------------
+
+        new_resume = models.Resume(
+            file_name=file.filename,
+            job_role=job_role,
+            final_score=round(final_score,2),
+            experience_score=exp_score,
+            job_match_score=round(job_score,2)
+        )
+
+        db.add(new_resume)
+        db.commit()
+
         return {
 
             "status": "success",
-
             "job_role": job_role,
-
             "final_score": round(final_score,2),
-
             "skills_found": matched_skills,
-
             "skills_missing": missing_skills,
-
             "job_match_score": round(job_score,2),
-
             "experience_score": exp_score,
-
             "education": education,
-
             "suggestions": suggestions
 
         }
@@ -380,3 +338,14 @@ async def analyze_resume_role(
             "status":"error",
             "message":str(e)
         }
+
+# -------------------------
+# GET SAVED RESUMES
+# -------------------------
+
+@app.get("/resumes")
+def get_resumes(db: Session = Depends(get_db)):
+
+    resumes = db.query(models.Resume).all()
+
+    return resumes
