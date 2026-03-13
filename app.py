@@ -149,12 +149,12 @@ def calculate_experience_score(text):
 # -------------------------
 def extract_education(text):
 
-<<<<<<< HEAD
+
    
     education_list = []
-=======
+
     education = []
->>>>>>> 97fc278 (your update message)
+
 
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
