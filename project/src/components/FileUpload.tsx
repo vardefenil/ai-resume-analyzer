@@ -62,21 +62,31 @@ const FileUpload: React.FC<FileUploadProps> = ({ onAnalysisComplete }) => {
 
     try {
       const response = await fetch(
-        "http://localhost:8000/analyze-resume-role",
+        "http://127.0.0.1:8000/analyze-resume-role",
         {
           method: "POST",
           body: formData,
         }
       );
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error("Backend returned an error");
+      }
 
-      console.log("Backend result:", data);
+      const result = await response.json();
 
-      onAnalysisComplete(data, file);
+      // IMPORTANT DEBUG LOGS
+      console.log("========== BACKEND RESPONSE ==========");
+      console.log(result);
+      console.log("Education from backend:", result.education);
+      console.log("=====================================");
+
+      // Send exact backend JSON to dashboard
+      onAnalysisComplete(result, file);
+
     } catch (err) {
-      console.error(err);
-      setError("Failed to connect to backend");
+      console.error("Upload error:", err);
+      setError("Failed to connect to backend server.");
     }
   };
 
@@ -125,7 +135,6 @@ const FileUpload: React.FC<FileUploadProps> = ({ onAnalysisComplete }) => {
       </div>
 
       {/* Job Role Selector */}
-
       <div className="mb-6 text-center">
         <label className="block text-sm font-medium text-slate-700 mb-2">
           Select Job Role
@@ -147,7 +156,6 @@ const FileUpload: React.FC<FileUploadProps> = ({ onAnalysisComplete }) => {
       </div>
 
       {/* Drag & Drop Box */}
-
       <div
         className={`relative border-2 border-dashed rounded-xl p-12 text-center transition-all duration-200 ${
           isDragging
@@ -211,7 +219,6 @@ const FileUpload: React.FC<FileUploadProps> = ({ onAnalysisComplete }) => {
       {error && (
         <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center">
           <AlertCircle className="w-5 h-5 text-red-600 mr-3 flex-shrink-0" />
-
           <p className="text-red-700">{error}</p>
         </div>
       )}
