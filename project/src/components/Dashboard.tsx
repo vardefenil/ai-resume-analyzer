@@ -4,9 +4,12 @@ import AnalyticsDashboard from "./AnalyticsDashboard";
 import { AnalyticsData } from "../types/analytics";
 
 const Dashboard = () => {
+
   const [analysisData, setAnalysisData] = useState<AnalyticsData | null>(null);
 
   const handleBackendResponse = (backendData: any, file: File) => {
+
+    console.log("BACKEND RESPONSE:", backendData);
 
     const getRating = (score: number) => {
       if (score >= 90) return "Excellent";
@@ -15,6 +18,29 @@ const Dashboard = () => {
       if (score >= 40) return "Needs Improvement";
       return "Poor";
     };
+
+    // ✅ Safely extract education from backend
+    let educationData: any[] = [];
+
+    if (Array.isArray(backendData?.education)) {
+      educationData = backendData.education;
+    } else if (Array.isArray(backendData?.data?.education)) {
+      educationData = backendData.data.education;
+    }
+
+    // ✅ Remove duplicate education entries
+    educationData = educationData.filter(
+      (edu, index, self) =>
+        index ===
+        self.findIndex(
+          (e) =>
+            e.degree === edu.degree &&
+            e.institution === edu.institution &&
+            e.year === edu.year
+        )
+    );
+
+    console.log("EDUCATION DATA:", educationData);
 
     const converted: AnalyticsData = {
 
@@ -38,16 +64,16 @@ const Dashboard = () => {
         {
           role: "Detected Experience",
           company: "Resume",
-          duration: backendData.experience_score + "%",
+          duration: (backendData.experience_score || 0) + "%",
           achievements: []
         }
       ],
 
-      // FIXED EDUCATION EXTRACTION
-      education: (backendData.education || []).map((edu: any) => ({
-        degree: edu.degree || "Degree Detected",
-        institution: edu.institution || "Institution",
-        year: edu.year || "N/A",
+      // ✅ Education mapping
+      education: educationData.map((edu: any) => ({
+        degree: edu?.degree || "Degree Detected",
+        institution: edu?.institution || "Institution Detected",
+        year: edu?.year || "N/A",
         gpa: ""
       })),
 
@@ -57,17 +83,18 @@ const Dashboard = () => {
         score: backendData.job_match_score || 0
       },
 
-      strengths:
-        backendData.skills_found?.map(
-          (s: string) => `Strong knowledge of ${s}`
-        ) || [],
+      strengths: (backendData.skills_found || []).map(
+        (s: string) => `Strong knowledge of ${s}`
+      ),
 
       recommendations:
         backendData.suggestions ||
-        backendData.skills_missing?.map(
+        (backendData.skills_missing || []).map(
           (s: string) => `Consider learning ${s}`
-        ) || []
+        )
     };
+
+    console.log("CONVERTED DATA:", converted);
 
     setAnalysisData(converted);
   };
