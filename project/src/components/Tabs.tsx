@@ -15,6 +15,7 @@ interface TabsTriggerProps {
   value: string;
   children: React.ReactNode;
   disabled?: boolean;
+  title?: string;
 }
 
 interface TabsContentProps {
@@ -46,22 +47,24 @@ export const TabsList: React.FC<TabsListProps> = ({ children, className = '' }) 
   );
 };
 
-export const TabsTrigger: React.FC<TabsTriggerProps> = ({ value, children, disabled = false }) => {
+export const TabsTrigger: React.FC<TabsTriggerProps> = ({ value, children, disabled = false, title }) => {
   const { value: activeValue, onValueChange } = React.useContext(TabsContext);
   const isActive = activeValue === value;
 
   return (
-    <button
-      onClick={() => !disabled && onValueChange(value)}
-      disabled={disabled}
-      className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium ring-offset-white transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ${
-        isActive
-          ? 'bg-white text-slate-950 shadow-sm'
-          : 'text-slate-500 hover:text-slate-900'
-      }`}
-    >
-      {children}
-    </button>
+    <span title={disabled ? title : undefined} className="contents">
+      <button
+        onClick={() => !disabled && onValueChange(value)}
+        disabled={disabled}
+        className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium ring-offset-white transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ${
+          isActive
+            ? 'bg-white text-slate-950 shadow-sm'
+            : 'text-slate-500 hover:text-slate-900'
+        }`}
+      >
+        {children}
+      </button>
+    </span>
   );
 };
 

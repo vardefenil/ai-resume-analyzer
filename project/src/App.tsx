@@ -1,9 +1,13 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { LogOut, User } from "lucide-react";
+import { supabase } from "./lib/supabaseClient";
 
 import FileUpload from "./components/FileUpload";
 import AnalyticsDashboard from "./components/AnalyticsDashboard";
 import ResumeComparison from "./components/ResumeComparison";
 import ResumeList from "./components/ResumeList";
+import StatsPanel from "./components/StatsPanel";
 
 import { AnalyticsData, ComparisonResult } from "./types/analytics";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/Tabs";
@@ -12,8 +16,13 @@ function App() {
 
   const [resumeList, setResumeList] = useState<AnalyticsData[]>([]);
   const [selectedResume, setSelectedResume] = useState<AnalyticsData | null>(null);
-  
   const [activeTab, setActiveTab] = useState("upload");
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate("/login");
+  };
 
 
 
@@ -176,7 +185,7 @@ function App() {
 
       <header className="bg-white shadow-sm border-b border-slate-200">
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
 
           <div className="flex items-center justify-between">
 
@@ -192,26 +201,26 @@ function App() {
 
             </div>
 
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center gap-4">
 
               {resumeList.length > 0 && (
-
-                <div className="text-sm text-slate-600">
-
-                  {resumeList.length} resume
-                  {resumeList.length !== 1 ? "s" : ""} analyzed
-
-                </div>
-
+                <span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+                  {resumeList.length} resume{resumeList.length !== 1 ? "s" : ""} analyzed
+                </span>
               )}
 
+              <div className="flex items-center gap-2 bg-slate-100 rounded-full px-3 py-1.5">
+                <User size={16} className="text-slate-500" />
+                <span className="text-sm font-medium text-slate-700">Admin</span>
+              </div>
+
               <button
-                onClick={() => setActiveTab("upload")}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                onClick={handleLogout}
+                title="Logout"
+                className="flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 px-4 py-2 rounded-lg font-medium transition-colors border border-red-200"
               >
-
-                Upload Resume
-
+                <LogOut size={16} />
+                Logout
               </button>
 
             </div>
@@ -228,21 +237,35 @@ function App() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
 
-          <TabsList className="grid w-full grid-cols-4 mb-8">
+          <TabsList className="grid w-full grid-cols-5 mb-8">
 
             <TabsTrigger value="upload">Upload</TabsTrigger>
 
-            <TabsTrigger value="list" disabled={resumeList.length === 0}>
+            <TabsTrigger
+              value="list"
+              disabled={resumeList.length === 0}
+              title={resumeList.length === 0 ? "Upload a resume first" : undefined}
+            >
               My Resumes ({resumeList.length})
             </TabsTrigger>
 
-            <TabsTrigger value="comparison" disabled={resumeList.length < 2}>
+            <TabsTrigger
+              value="comparison"
+              disabled={resumeList.length < 2}
+              title={resumeList.length < 2 ? "Upload at least 2 resumes to compare" : undefined}
+            >
               Compare
             </TabsTrigger>
 
-            <TabsTrigger value="analysis" disabled={!selectedResume}>
+            <TabsTrigger
+              value="analysis"
+              disabled={!selectedResume}
+              title={!selectedResume ? "Select a resume to view analysis" : undefined}
+            >
               Analysis
             </TabsTrigger>
+
+            <TabsTrigger value="stats">📊 Stats</TabsTrigger>
 
           </TabsList>
 
@@ -287,6 +310,14 @@ function App() {
               <AnalyticsDashboard data={selectedResume} />
 
             )}
+
+          </TabsContent>
+
+
+
+          <TabsContent value="stats">
+
+            <StatsPanel />
 
           </TabsContent>
 
